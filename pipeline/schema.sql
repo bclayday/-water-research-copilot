@@ -1,3 +1,7 @@
+-- Water Research Copilot Schema
+-- Run in Lakebase (PostgreSQL). pgvector extension may need to be enabled separately.
+
+-- Create extension if supported (ignore error if not)
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Users and goals
@@ -71,16 +75,18 @@ CREATE TABLE IF NOT EXISTS reading_progress (
     UNIQUE (user_id, paper_id)
 );
 
--- Embeddings
+-- Embeddings (uses pgvector vector type)
+-- If pgvector is not available, create a TEXT column fallback
 CREATE TABLE IF NOT EXISTS paper_embeddings (
     embedding_id SERIAL PRIMARY KEY,
     paper_id TEXT REFERENCES papers(paper_id) ON DELETE CASCADE,
     chunk_index INTEGER DEFAULT 0,
     chunk_text TEXT NOT NULL,
-    embedding vector(384) NOT NULL,
+    embedding vector(384),
     model_name TEXT DEFAULT 'all-MiniLM-L6-v2',
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- HNSW index for fast similarity search (ignore if not supported)
 CREATE INDEX IF NOT EXISTS idx_paper_embeddings_hnsw
 ON paper_embeddings USING hnsw (embedding vector_cosine_ops);

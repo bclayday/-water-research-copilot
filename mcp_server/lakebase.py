@@ -1,9 +1,19 @@
+"""
+Lakebase connection helpers.
+
+Connects to Databricks Lakebase PostgreSQL using a connection URL stored
+in the Databricks secret scope 'database' under key 'lakebase-url'.
+The URL is base64-encoded (matching the pattern from Day 1 assignments).
+"""
+
 from __future__ import annotations
 
+import base64
 import json
 import os
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlparse, parse_qs
 
 import psycopg2
 from databricks.sdk import WorkspaceClient
@@ -13,54 +23,68 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT_DIR / "pipeline" / "schema.sql"
 
 
-def _secret(scope: str, key: str) -> str | None:
+def _get_lakebase_url() -> str:
+    """
+    Retrieve the Lakebase connection URL.
+
+    Priority:
+      1. LAKEBASE_URL env var (already a full postgres:// connection string)
+      2. Databricks secret scope 'database' key 'lakebase-url'
+      3. LAKEBASE_URL_B64 env var (base64-encoded connection string)
+    """
+    # 1. Direct env var
+    url = os.getenv("LAKEBASE_URL")
+    if url:
+        return url
+
+    # 2. Databricks secret
     try:
         client = WorkspaceClient()
-        return client.secrets.get_secret(scope=scope, key=key).value
+        secret_val = client.secrets.get_secret(scope="database", key="lakebase-url").value
+        if secret_val:
+            # Try base64 decode first (Day 1 pattern)
+            try:
+                decoded = base64.b64decode(secret_val).decode("utf-8")
+                if decoded.startswith("postgres"):
+                    return decoded
+            except Exception:
+                pass
+            # Otherwise use raw value
+            if secret_val.startswith("postgres"):
+                return secret_val
     except Exception:
-        return None
+        pass
 
+    # 3. Base64 env var fallback
+    b64 = os.getenv("LAKEBASE_URL_B64")
+    if b64:
+        return base64.b64decode(b64).decode("utf-8")
 
-def _from_env_or_secret(name: str, default: str | None = None) -> str | None:
-    value = os.getenv(name)
-    if value:
-        return value
-
-    scope = os.getenv("DATABRICKS_SECRET_SCOPE")
-    secret_key = os.getenv(f"{name}_SECRET_KEY", name.lower())
-    if scope:
-        secret_value = _secret(scope, secret_key)
-        if secret_value:
-            return secret_value
-
-    return default
-
-
-def get_connection():
-    host = _from_env_or_secret("LAKEBASE_HOST")
-    port = int(_from_env_or_secret("LAKEBASE_PORT", "5432") or "5432")
-    dbname = _from_env_or_secret("LAKEBASE_DB", "postgres")
-    user = _from_env_or_secret("LAKEBASE_USER")
-    password = _from_env_or_secret("LAKEBASE_PASSWORD")
-    sslmode = _from_env_or_secret("LAKEBASE_SSLMODE", "require")
-
-    if not all([host, dbname, user, password]):
-        raise RuntimeError(
-            "Missing Lakebase connection settings. Set LAKEBASE_HOST/DB/USER/PASSWORD or map them through DATABRICKS_SECRET_SCOPE."
-        )
-
-    return psycopg2.connect(
-        host=host,
-        port=port,
-        dbname=dbname,
-        user=user,
-        password=password,
-        sslmode=sslmode,
-        cursor_factory=RealDictCursor,
+    raise RuntimeError(
+        "Could not find Lakebase URL. Set LAKEBASE_URL env var or store it "
+        "in Databricks secret scope 'database' key 'lakebase-url'."
     )
 
 
+def get_connection():
+    """Get a psycopg2 connection to Lakebase."""
+    url = _get_lakebase_url()
+    parsed = urlparse(url)
+
+    conn = psycopg2.connect(
+        host=parsed.hostname,
+        port=parsed.port or 5432,
+        dbname=parsed.path.lstrip("/"),
+        user=parsed.username,
+        password=parsed.password,
+        sslmode="require",
+        cursor_factory=RealDictCursor,
+    )
+    return conn
+
+
 def run_query(sql: str, params: Iterable[Any] | None = None) -> list[dict[str, Any]]:
+    """Execute a SELECT query and return rows as list of dicts."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
@@ -69,6 +93,7 @@ def run_query(sql: str, params: Iterable[Any] | None = None) -> list[dict[str, A
 
 
 def run_write(sql: str, params: Iterable[Any] | None = None) -> int:
+    """Execute an INSERT/UPDATE/DELETE and return rowcount."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
@@ -78,6 +103,7 @@ def run_write(sql: str, params: Iterable[Any] | None = None) -> int:
 
 
 def run_write_returning(sql: str, params: Iterable[Any] | None = None) -> dict[str, Any] | None:
+    """Execute an INSERT ... RETURNING and return the row as a dict."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
@@ -87,14 +113,24 @@ def run_write_returning(sql: str, params: Iterable[Any] | None = None) -> dict[s
 
 
 def ensure_schema() -> None:
+    """Create all tables if they don't exist."""
     schema_sql = SCHEMA_PATH.read_text()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(schema_sql)
+            # Split on semicolons and execute each statement
+            statements = [s.strip() for s in schema_sql.split(";") if s.strip()]
+            for stmt in statements:
+                try:
+                    cur.execute(stmt)
+                except Exception as e:
+                    # Ignore "already exists" errors
+                    if "already exists" not in str(e):
+                        print(f"Schema warning: {e}")
         conn.commit()
 
 
 def upsert_paper(paper: dict[str, Any]) -> None:
+    """Insert or update a paper in the papers table."""
     sql = """
     INSERT INTO papers (
         paper_id, title, abstract, publication_year, doi,

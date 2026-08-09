@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Water Research Copilot
 
 Water Research Copilot is a Databricks AI capstone project for water-treatment and water-quality professionals. It helps users discover research papers from OpenAlex, build learning goals, generate structured reading plans, save papers into collections, and track progress with an AI agent backed by semantic search.
@@ -196,3 +197,6 @@ Key rules:
 - All HTTP calls to OpenAlex live in `mcp_server/research_broker.py`.
 - The AI agent reads from and writes to Lakebase through the MCP tools.
 - The dashboard supports search, collections, reading-list status updates, and goal generation.
+=======
+# -water-research-copilot
+>>>>>>> 6b2c082cdf0ab42a402fef4efdccbe175cea8e5f
