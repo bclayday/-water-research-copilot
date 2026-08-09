@@ -1,0 +1,6 @@
+fastmcp>=2.10.6
+requests==2.32.3
+psycopg2-binary==2.9.9
+pgvector==0.3.2
+sentence-transformers==3.0.1
+databricks-sdk>=0.57.0
