@@ -1,49 +1,77 @@
-# Water Research Copilot Architecture
+# Architecture Overview
 
-## Components
+## System diagram
 
-1. **OpenAlex broker (`mcp_server/research_broker.py`)**
-   - Centralizes all HTTP traffic to OpenAlex
-   - Reconstructs abstracts from inverted-index payloads
-   - Normalizes work metadata for downstream use
+```text
+                    +-----------------------+
+                    |  USGS NWIS API        |
+                    |  OpenAlex API         |
+                    +-----------+-----------+
+                                |
+                +---------------+----------------+
+                |                                |
+                v                                v
+      +--------------------+           +--------------------+
+      | ingest_usgs.py     |           | ingest_papers.py   |
+      | Spark pipeline     |           | Spark pipeline     |
+      +---------+----------+           +---------+----------+
+                |                                |
+                +---------------+----------------+
+                                v
+                      +--------------------+
+                      | Lakebase / Postgres |
+                      | research + water    |
+                      +-----+----------+----+
+                            |          |
+                            |          +--------------------+
+                            |                               |
+                            v                               v
+                 +-------------------+          +----------------------+
+                 | Flask dashboard   |          | FastMCP server       |
+                 | live + research   |          | research tools       |
+                 +-------------------+          +----------------------+
+                            |                               |
+                            v                               v
+                 +-------------------+          +----------------------+
+                 | Human viewer      |          | Agent Bricks / AI    |
+                 +-------------------+          +----------------------+
+```
 
-2. **Lakebase data layer (`mcp_server/lakebase.py`)**
-   - Pulls credentials from Databricks secrets or environment variables
-   - Creates schema on boot
-   - Provides query and write helpers for the MCP server and dashboard
+## Design notes
 
-3. **MCP server (`mcp_server/research_mcp_server.py`)**
-   - Exposes seven research tools over SSE
-   - Reads from OpenAlex and Lakebase
-   - Writes collections, goals, and reading-progress updates back to Lakebase
-   - Uses pgvector + sentence-transformers for semantic search
+### Unified app entrypoint
 
-4. **Spark ingest pipeline (`pipeline/ingest_papers.py`)**
-   - Pulls water-quality papers from OpenAlex
-   - Uses Spark DataFrames to parse JSON and transform metadata
-   - Loads papers, authors, and authorship edges into Lakebase
+`app.py` is dual-purpose:
+- dashboard mode when `DATABRICKS_APP_NAME` contains `dashboard`
+- MCP mode for everything else
 
-5. **Embedding pipeline (`pipeline/embed_papers.py`)**
-   - Reads papers without embeddings
-   - Chunks abstracts into overlapping passages
-   - Stores 384-dimensional vectors in pgvector for semantic retrieval
+### Medallion architecture for water monitoring
 
-6. **Dashboard (`dashboard/app.py`)**
-   - Flask UI for searching papers, saving collections, generating goals, and tracking reading status
-   - Reuses the same broker and MCP tool logic so app and agent stay aligned
+- **Bronze**: raw USGS JSON snapshots in `raw_readings`
+- **Silver**: normalized reading records in `stg_readings`
+- **Gold**: station health scoring in `mart_station_health`
 
-7. **Agent config (`agent/agent.py`)**
-   - Provides an Agent Bricks-style configuration object
-   - Points to the SSE MCP server and uses the documented system prompt
+### Research architecture
 
-## Data Flow
+- OpenAlex provides paper metadata and abstract reconstruction input.
+- Lakebase stores papers, authors, goals, collections, and progress.
+- Offline embedding generation writes pgvector rows into `paper_embeddings`.
+- FastMCP exposes retrieval and workflow tools to an agent.
 
-OpenAlex API -> Spark ingest -> Lakebase papers/authors -> embedding job -> pgvector index -> MCP tools / dashboard / agent
+### Why keep MCP server files unchanged
 
-## Why this design
+The existing `mcp_server/research_mcp_server.py`, `research_broker.py`, and `lakebase.py` were already working. Preserving them reduces regression risk while still meeting the capstone structure requirements.
 
-- Single broker keeps third-party API logic isolated.
-- Lakebase helpers keep schema and connectivity consistent.
-- Spark satisfies structured ETL requirements.
-- pgvector enables AI-powered retrieval over unstructured abstracts.
-- MCP tools provide a clean contract for both dashboard actions and agent automation.
+## Operational flow
+
+### Live monitoring
+1. Dashboard requests USGS instant values directly for current display.
+2. Batch ingestion job stores the same feed historically in Lakebase.
+3. Anomaly logic writes alert rows to `water_anomalies`.
+4. SQL marts summarize current station health.
+
+### Research workflow
+1. User searches literature in dashboard or through MCP.
+2. OpenAlex results are normalized and optionally stored.
+3. Offline embeddings enable semantic search over abstract chunks.
+4. Agent tools let users save, organize, and track papers.

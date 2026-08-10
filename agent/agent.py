@@ -1,22 +1,47 @@
+"""Agent registration example for the Water Quality Intelligence Platform."""
+
 from __future__ import annotations
 
-from pathlib import Path
+import os
+from dataclasses import asdict, dataclass
 
-SYSTEM_PROMPT = Path(__file__).with_name("SYSTEM_PROMPT.md").read_text()
 
-AGENT_CONFIG = {
-    "name": "water-research-copilot-agent",
-    "description": "AI research copilot for water quality literature discovery and reading-plan management.",
-    "system_prompt": SYSTEM_PROMPT,
-    "mcp_servers": [
-        {
-            "name": "water-research-mcp",
-            "transport": "sse",
-            "url": "http://127.0.0.1:8000/sse",
-        }
+@dataclass
+class MCPServerConfig:
+    name: str
+    transport: str
+    url: str
+
+
+@dataclass
+class AgentConfig:
+    name: str
+    description: str
+    system_prompt_path: str
+    model: str
+    mcp_servers: list[MCPServerConfig]
+
+
+DEFAULT_MCP_URL = os.getenv("WATER_RESEARCH_MCP_URL", "https://your-mcp-app.databricksapps.com/sse")
+
+AGENT_CONFIG = AgentConfig(
+    name="water-quality-intelligence-agent",
+    description=(
+        "Research copilot for water quality, treatment, watershed monitoring, "
+        "and environmental sensing. Uses MCP tools for literature search, semantic retrieval, "
+        "paper saving, and reading-plan tracking."
+    ),
+    system_prompt_path="agent/SYSTEM_PROMPT.md",
+    model=os.getenv("AGENT_MODEL", "gpt-4.1-mini"),
+    mcp_servers=[
+        MCPServerConfig(
+            name="water-research-copilot",
+            transport="sse",
+            url=DEFAULT_MCP_URL,
+        )
     ],
-}
+)
 
 
 if __name__ == "__main__":
-    print(AGENT_CONFIG)
+    print(asdict(AGENT_CONFIG))
