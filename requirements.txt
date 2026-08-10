@@ -1,8 +1,2 @@
--r mcp_server/requirements.txt
--r dashboard/requirements.txt
-pyspark==3.5.1
-sentence-transformers==3.0.1
-psycopg2-binary==2.9.9
-pgvector==0.3.2
 flask==3.0.3
 requests==2.31.0
