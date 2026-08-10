@@ -23,7 +23,6 @@ DEFAULT_USER_EMAIL = os.getenv("DEFAULT_USER_EMAIL", "researcher@example.com")
 
 
 def _safe_search(query: str, limit: int = 10) -> dict:
-    """Search OpenAlex for papers, gracefully handle errors."""
     try:
         from research_broker import search_papers
         papers = search_papers(query, limit=limit)
@@ -33,20 +32,17 @@ def _safe_search(query: str, limit: int = 10) -> dict:
 
 
 def _safe_reading_list(user_email: str) -> dict:
-    """Get reading list, gracefully handle errors."""
     try:
         import lakebase
         lakebase.ensure_schema()
         rows = lakebase.run_query(
-            """
-            SELECT p.paper_id, p.title, p.abstract, p.publication_year,
-                   p.cited_by_count, rp.status, rp.notes
+            """SELECT p.paper_id, p.title, p.abstract, p.publication_year,
+                      p.cited_by_count, rp.status, rp.notes
             FROM reading_progress rp
             JOIN papers p ON p.paper_id = rp.paper_id
             JOIN users u ON u.user_id = rp.user_id
             WHERE u.email = %s
-            ORDER BY rp.updated_at DESC
-            """,
+            ORDER BY rp.updated_at DESC""",
             (user_email,),
         )
         return {"items": rows}
@@ -55,20 +51,16 @@ def _safe_reading_list(user_email: str) -> dict:
 
 
 def _safe_collections(user_email: str) -> list:
-    """Get user collections, gracefully handle errors."""
     try:
         import lakebase
         lakebase.ensure_schema()
         return lakebase.run_query(
-            """
-            SELECT c.name, COUNT(cp.paper_id) AS paper_count
+            """SELECT c.name, COUNT(cp.paper_id) AS paper_count
             FROM users u
             JOIN collections c ON c.user_id = u.user_id
             LEFT JOIN collection_papers cp ON cp.collection_id = c.collection_id
             WHERE u.email = %s
-            GROUP BY c.name
-            ORDER BY c.name
-            """,
+            GROUP BY c.name ORDER BY c.name""",
             (user_email,),
         )
     except Exception:
@@ -76,63 +68,18 @@ def _safe_collections(user_email: str) -> list:
 
 
 def _safe_goals(user_email: str) -> list:
-    """Get learning goals, gracefully handle errors."""
     try:
         import lakebase
         lakebase.ensure_schema()
         return lakebase.run_query(
-            """
-            SELECT lg.goal_id, lg.title, lg.description, lg.created_at
+            """SELECT lg.goal_id, lg.title, lg.description, lg.created_at
             FROM users u
             JOIN learning_goals lg ON lg.user_id = u.user_id
-            WHERE u.email = %s
-            ORDER BY lg.created_at DESC
-            """,
+            WHERE u.email = %s ORDER BY lg.created_at DESC""",
             (user_email,),
         )
     except Exception:
         return []
-
-
-def _safe_save(paper_id: str, collection_name: str, user_email: str) -> bool:
-    """Save paper to collection."""
-    try:
-        import lakebase
-        lakebase.ensure_schema()
-        # Upsert user
-        lakebase.run_write(
-            """INSERT INTO users (email, display_name) VALUES (%s, %s)
-               ON CONFLICT (email) DO NOTHING""",
-            (user_email, user_email.split("@")[0]),
-        )
-        user = lakebase.run_query("SELECT user_id FROM users WHERE email = %s", (user_email,))
-        if not user:
-            return False
-        user_id = user[0]["user_id"]
-
-        # Upsert collection
-        lakebase.run_write(
-            """INSERT INTO collections (user_id, name) VALUES (%s, %s)
-               ON CONFLICT (user_id, name) DO NOTHING""",
-            (user_id, collection_name),
-        )
-        col = lakebase.run_query(
-            "SELECT collection_id FROM collections WHERE user_id = %s AND name = %s",
-            (user_id, collection_name),
-        )
-        if not col:
-            return False
-        col_id = col[0]["collection_id"]
-
-        # Add paper to collection
-        lakebase.run_write(
-            """INSERT INTO collection_papers (collection_id, paper_id)
-               VALUES (%s, %s) ON CONFLICT DO NOTHING""",
-            (col_id, paper_id),
-        )
-        return True
-    except Exception:
-        return False
 
 
 @app.route("/", methods=["GET"])
@@ -160,14 +107,36 @@ def index():
 
 @app.route("/save", methods=["POST"])
 def save_paper():
-    _safe_save(
-        paper_id=request.form["paper_id"],
-        collection_name=request.form.get("collection_name", "Saved Papers"),
-        user_email=request.form.get("user_email", DEFAULT_USER_EMAIL),
-    )
+    try:
+        import lakebase
+        lakebase.ensure_schema()
+        paper_id = request.form["paper_id"]
+        collection_name = request.form.get("collection_name", "Saved Papers")
+        user_email = request.form.get("user_email", DEFAULT_USER_EMAIL)
+
+        lakebase.run_write(
+            "INSERT INTO users (email, display_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (user_email, user_email.split("@")[0]),
+        )
+        user = lakebase.run_query("SELECT user_id FROM users WHERE email = %s", (user_email,))
+        if user:
+            lakebase.run_write(
+                "INSERT INTO collections (user_id, name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (user[0]["user_id"], collection_name),
+            )
+            col = lakebase.run_query(
+                "SELECT collection_id FROM collections WHERE user_id = %s AND name = %s",
+                (user[0]["user_id"], collection_name),
+            )
+            if col:
+                lakebase.run_write(
+                    "INSERT INTO collection_papers (collection_id, paper_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (col[0]["collection_id"], paper_id),
+                )
+    except Exception:
+        pass
     return redirect(url_for("index", q=request.form.get("query", ""),
-                            user_email=request.form.get("user_email", DEFAULT_USER_EMAIL),
-                            tab="search"))
+                            user_email=request.form.get("user_email", DEFAULT_USER_EMAIL), tab="search"))
 
 
 @app.route("/status", methods=["POST"])
@@ -192,8 +161,7 @@ def update_status():
     except Exception:
         pass
     return redirect(url_for("index", q=request.form.get("query", ""),
-                            user_email=request.form.get("user_email", DEFAULT_USER_EMAIL),
-                            tab="reading-list"))
+                            user_email=request.form.get("user_email", DEFAULT_USER_EMAIL), tab="reading-list"))
 
 
 @app.route("/plan", methods=["POST"])
@@ -207,35 +175,28 @@ def create_plan():
         user_email = request.form.get("user_email", DEFAULT_USER_EMAIL)
         max_papers = int(request.form.get("max_papers", 5))
 
-        # Upsert user + goal
         lakebase.run_write(
-            """INSERT INTO users (email, display_name) VALUES (%s, %s)
-               ON CONFLICT (email) DO NOTHING""",
+            "INSERT INTO users (email, display_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
             (user_email, user_email.split("@")[0]),
         )
         user = lakebase.run_query("SELECT user_id FROM users WHERE email = %s", (user_email,))
         if user:
             user_id = user[0]["user_id"]
             lakebase.run_write(
-                """INSERT INTO learning_goals (user_id, title, description)
-                   VALUES (%s, %s, %s)""",
+                "INSERT INTO learning_goals (user_id, title, description) VALUES (%s, %s, %s)",
                 (user_id, f"Reading plan: {topic}", topic),
             )
-            # Fetch papers and create progress entries
             papers = search_papers(topic, limit=max_papers)
             for p in papers:
                 lakebase.upsert_paper(p)
                 lakebase.run_write(
-                    """INSERT INTO reading_progress (user_id, paper_id, status)
-                       VALUES (%s, %s, 'not_started')
-                       ON CONFLICT DO NOTHING""",
+                    "INSERT INTO reading_progress (user_id, paper_id, status) VALUES (%s, %s, 'not_started') ON CONFLICT DO NOTHING",
                     (user_id, p["paper_id"]),
                 )
     except Exception:
         pass
     return redirect(url_for("index", q=request.form.get("topic", ""),
-                            user_email=request.form.get("user_email", DEFAULT_USER_EMAIL),
-                            tab="goals"))
+                            user_email=request.form.get("user_email", DEFAULT_USER_EMAIL), tab="goals"))
 
 
 if __name__ == "__main__":
