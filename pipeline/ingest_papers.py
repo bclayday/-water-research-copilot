@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any
 
 import psycopg2
@@ -10,6 +11,7 @@ from pyspark.sql import Row, SparkSession
 
 OPENALEX_URL = "https://api.openalex.org/works"
 MAILTO = os.getenv("OPENALEX_MAILTO", "brucect20@gmail.com")
+MIN_PUBLICATION_YEAR = int(os.getenv("MIN_PUBLICATION_YEAR", "2021"))
 TOPICS = [
     "water quality monitoring",
     "drinking water treatment",
@@ -30,14 +32,52 @@ def reconstruct_abstract(work: dict[str, Any]) -> str:
     return " ".join(token for _, token in sorted(positions.items())).strip()
 
 
-def fetch_topic(topic: str, per_page: int = 25) -> list[dict[str, Any]]:
-    response = requests.get(
-        OPENALEX_URL,
-        params={"search": topic, "per-page": per_page, "mailto": MAILTO},
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json().get("results", [])
+def retry_get(url: str, params: dict[str, Any] | None = None, max_retries: int = 3, timeout: int = 30) -> requests.Response:
+    last_error: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            response = requests.get(url, params=params, timeout=timeout)
+            if response.status_code == 429 or response.status_code >= 500:
+                response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            last_error = exc
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            is_retryable = status_code == 429 or (status_code is not None and status_code >= 500)
+            if attempt >= max_retries or not is_retryable:
+                raise
+            time.sleep(2**attempt)
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("retry_get failed without an exception")
+
+
+def fetch_topic(topic: str, per_page: int = 25, max_pages: int = 3) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    cursor = "*"
+    for _ in range(max_pages):
+        response = retry_get(
+            OPENALEX_URL,
+            params={
+                "search": topic,
+                "per-page": per_page,
+                "cursor": cursor,
+                "filter": f"publication_year:>{MIN_PUBLICATION_YEAR - 1}",
+                "mailto": MAILTO,
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        page_results = payload.get("results", [])
+        if not page_results:
+            break
+        results.extend(page_results)
+        next_cursor = (payload.get("meta") or {}).get("next_cursor")
+        if not next_cursor:
+            break
+        cursor = next_cursor
+    return results
 
 
 def get_connection() -> psycopg2.extensions.connection:

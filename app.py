@@ -603,7 +603,10 @@ else:
     if str(MCP_DIR) not in sys.path:
         sys.path.insert(0, str(MCP_DIR))
 
-    from mcp_server.research_mcp_server import ensure_schema, mcp
+    try:
+        from mcp_server.research_mcp_server import ensure_schema, mcp
+    except ModuleNotFoundError:
+        from research_mcp_server import ensure_schema, mcp
 
     if __name__ == "__main__":
         ensure_schema()

@@ -88,6 +88,13 @@ CREATE TABLE IF NOT EXISTS water_stations (
     county TEXT
 );
 
+CREATE TABLE IF NOT EXISTS raw_readings (
+    raw_id BIGSERIAL PRIMARY KEY,
+    source_system TEXT NOT NULL DEFAULT 'usgs_nwis',
+    payload JSONB NOT NULL,
+    fetched_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS water_readings (
     reading_id SERIAL PRIMARY KEY,
     site_id TEXT REFERENCES water_stations(site_id) ON DELETE CASCADE,
@@ -96,7 +103,8 @@ CREATE TABLE IF NOT EXISTS water_readings (
     value FLOAT,
     unit TEXT,
     reading_time TIMESTAMPTZ,
-    ingested_at TIMESTAMPTZ DEFAULT now()
+    ingested_at TIMESTAMPTZ DEFAULT now(),
+    CONSTRAINT water_readings_site_param_time_uniq UNIQUE (site_id, parameter_code, reading_time)
 );
 
 CREATE TABLE IF NOT EXISTS water_anomalies (

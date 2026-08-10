@@ -33,7 +33,6 @@ water-research-copilot/
 │   ├── research_mcp_server.py
 │   ├── research_broker.py
 │   ├── lakebase.py
-│   ├── app.yaml
 │   └── requirements.txt
 ├── pipeline/
 │   ├── schema.sql
@@ -194,7 +193,7 @@ Set the Databricks app name so it contains `dashboard`, then deploy with root `a
 
 ### MCP app
 
-Set a non-dashboard app name, install `mcp_server/requirements.txt`, and run the same root entrypoint or the dedicated `mcp_server/app.yaml`.
+Set a non-dashboard app name, install `mcp_server/requirements.txt`, and run the same root entrypoint `app.py`.
 
 ### Lakebase configuration
 

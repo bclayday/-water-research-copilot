@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Iterable
-
 import psycopg2
 from sentence_transformers import SentenceTransformer
 
@@ -26,7 +24,7 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
     return chunks
 
 
-def vector_literal(values: Iterable[float]) -> str:
+def vector_param(values: list[float]) -> str:
     return "[" + ",".join(f"{value:.8f}" for value in values) + "]"
 
 
@@ -51,6 +49,7 @@ def main() -> None:
     inserted = 0
     with conn.cursor() as cur:
         for paper_id, abstract in papers:
+            paper_inserted = 0
             for chunk_index, chunk in enumerate(chunk_text(abstract)):
                 embedding = model.encode(chunk).tolist()
                 cur.execute(
@@ -61,9 +60,12 @@ def main() -> None:
                         chunk_text = EXCLUDED.chunk_text,
                         embedding = EXCLUDED.embedding
                     """,
-                    (paper_id, chunk_index, chunk, vector_literal(embedding)),
+                    (paper_id, chunk_index, chunk, vector_param(embedding)),
                 )
                 inserted += 1
+                paper_inserted += 1
+            # If abstracts change upstream, re-run this job so stored embeddings stay aligned.
+            print({"paper_id": paper_id, "embedding_chunks_written": paper_inserted})
     conn.commit()
     conn.close()
     print({"embedding_chunks_written": inserted})

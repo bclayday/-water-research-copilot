@@ -32,6 +32,34 @@ SELECT
 FROM water_readings wr
 LEFT JOIN water_stations ws ON ws.site_id = wr.site_id;
 
+-- Gold: anomaly flags by reading for downstream alerts and review workflows
+CREATE OR REPLACE VIEW anomaly_flags AS
+SELECT
+    reading_id,
+    site_id,
+    station_name,
+    county,
+    watershed,
+    parameter_code,
+    parameter_name,
+    value,
+    unit,
+    reading_time,
+    severity,
+    CASE
+        WHEN parameter_code = '00400' AND value < 6.5 THEN 6.5
+        WHEN parameter_code = '00400' AND value > 8.5 THEN 8.5
+        WHEN parameter_code = '00400' AND value < 6.8 THEN 6.8
+        WHEN parameter_code = '00400' AND value > 8.0 THEN 8.0
+        WHEN parameter_code = '63680' AND value > 10 THEN 10.0
+        WHEN parameter_code = '63680' AND value > 5 THEN 5.0
+        WHEN parameter_code = '00300' AND value < 4 THEN 4.0
+        WHEN parameter_code = '00300' AND value < 5 THEN 5.0
+        ELSE NULL
+    END AS threshold
+FROM stg_readings
+WHERE severity IN ('warning', 'danger');
+
 -- Gold: station-level health mart using latest values and anomaly weighting
 CREATE OR REPLACE VIEW mart_station_health AS
 WITH latest AS (

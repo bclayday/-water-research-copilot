@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from typing import Any
 
@@ -37,6 +38,27 @@ def get_connection() -> psycopg2.extensions.connection:
     import os
 
     return psycopg2.connect(os.environ["LAKEBASE_URL"], sslmode="require")
+
+
+def retry_get(url: str, params: dict[str, Any] | None = None, max_retries: int = 3, timeout: int = 30) -> requests.Response:
+    last_error: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            response = requests.get(url, params=params, timeout=timeout)
+            if response.status_code == 429 or response.status_code >= 500:
+                response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            last_error = exc
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            is_retryable = status_code == 429 or (status_code is not None and status_code >= 500)
+            if attempt >= max_retries or not is_retryable:
+                raise
+            time.sleep(2**attempt)
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("retry_get failed without an exception")
 
 
 def detect_anomaly(parameter_code: str, value: float | None) -> tuple[str, float] | None:
@@ -92,6 +114,7 @@ def write_results(conn: psycopg2.extensions.connection, rows: list[dict[str, Any
                 """
                 INSERT INTO water_readings (site_id, parameter_code, parameter_name, value, unit, reading_time)
                 VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (site_id, parameter_code, reading_time) DO NOTHING
                 """,
                 (
                     row["site_id"],
@@ -102,10 +125,10 @@ def write_results(conn: psycopg2.extensions.connection, rows: list[dict[str, Any
                     row["reading_time"],
                 ),
             )
-            readings_written += 1
+            readings_written += cur.rowcount
 
             anomaly = detect_anomaly(row["parameter_code"], row["value"])
-            if anomaly:
+            if anomaly and cur.rowcount:
                 severity, threshold = anomaly
                 cur.execute(
                     """
@@ -126,12 +149,25 @@ def write_results(conn: psycopg2.extensions.connection, rows: list[dict[str, Any
     return readings_written, anomalies_written
 
 
+def store_raw_snapshot(conn: psycopg2.extensions.connection, payload: dict[str, Any]) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO raw_readings (source_system, payload)
+            VALUES (%s, %s::jsonb)
+            """,
+            ("usgs_nwis", json.dumps(payload)),
+        )
+    conn.commit()
+
+
 def main() -> None:
     spark = SparkSession.builder.appName("USGSWaterIngest").getOrCreate()
-    response = requests.get(USGS_URL, timeout=30)
+    response = retry_get(USGS_URL)
     response.raise_for_status()
+    payload = response.json()
 
-    raw_df = spark.read.json(spark.sparkContext.parallelize([response.text]))
+    raw_df = spark.read.json(spark.sparkContext.parallelize([json.dumps(payload)]))
     exploded_df = (
         raw_df.select(explode(col("value.timeSeries")).alias("series"))
         .select(
@@ -170,6 +206,7 @@ def main() -> None:
         )
 
     conn = get_connection()
+    store_raw_snapshot(conn, payload)
     upsert_stations(conn)
     readings_written, anomalies_written = write_results(conn, rows)
     conn.close()
