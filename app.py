@@ -313,11 +313,16 @@ if IS_DASHBOARD:
     .dot.danger, .status.danger { background: var(--red); }
     .dot.unknown, .status.unknown { background: #64748b; }
     .ga-map {
-      position: relative; min-height: 380px; overflow: hidden;
-      background: linear-gradient(180deg, rgba(14,41,64,.95), rgba(6,15,26,.95));
+      position: relative; min-height: 420px; overflow: hidden;
+      background: radial-gradient(ellipse at 50% 40%, #1a3a2e 0%, #0d2a3a 40%, #061520 100%);
       border-radius: 18px; border: 1px solid rgba(95,208,255,.12);
     }
-    .ga-map svg { width: 100%; height: 100%; min-height: 380px; display: block; }
+    .ga-map svg { width: 100%; height: 100%; min-height: 420px; display: block; }
+    .topo-line { fill: none; stroke: rgba(95,208,255,.06); stroke-width: 0.3; }
+    .topo-line-major { fill: none; stroke: rgba(95,208,255,.12); stroke-width: 0.5; }
+    .topo-elevation { fill: rgba(34,197,94,.04); }
+    .topo-river { fill: none; stroke: rgba(51,181,229,.25); stroke-width: 0.6; }
+    .topo-river-2 { fill: none; stroke: rgba(51,181,229,.15); stroke-width: 0.4; }
     .marker {
       position: absolute; transform: translate(-50%, -50%);
       width: 18px; height: 18px; border-radius: 50%; border: 3px solid white;
@@ -417,13 +422,60 @@ if IS_DASHBOARD:
             <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
               <defs>
                 <linearGradient id="gaFill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stop-color="#153754" />
-                  <stop offset="100%" stop-color="#0b1826" />
+                  <stop offset="0%" stop-color="#1a3a2e" stop-opacity="0.9" />
+                  <stop offset="50%" stop-color="#153754" stop-opacity="0.85" />
+                  <stop offset="100%" stop-color="#0b1826" stop-opacity="0.9" />
                 </linearGradient>
+                <radialGradient id="elev1" cx="50%" cy="35%" r="25%">
+                  <stop offset="0%" stop-color="rgba(34,197,94,.08)" />
+                  <stop offset="100%" stop-color="rgba(34,197,94,0)" />
+                </radialGradient>
+                <radialGradient id="elev2" cx="35%" cy="55%" r="20%">
+                  <stop offset="0%" stop-color="rgba(245,158,11,.06)" />
+                  <stop offset="100%" stop-color="rgba(245,158,11,0)" />
+                </radialGradient>
               </defs>
-              <path d="M36,5 L74,7 L84,24 L92,46 L88,74 L75,96 L43,93 L15,67 L11,34 L24,17 Z" fill="url(#gaFill)" stroke="#5fd0ff" stroke-width="1.2" opacity="0.95" />
-              <path d="M27,18 C41,27 55,37 70,49" stroke="#2a8fb9" stroke-width="1" fill="none" opacity="0.45" />
-              <path d="M25,47 C39,54 56,63 76,74" stroke="#2a8fb9" stroke-width="1" fill="none" opacity="0.35" />
+
+              <!-- Georgia outline -->
+              <path d="M36,5 L74,7 L84,24 L92,46 L88,74 L75,96 L43,93 L15,67 L11,34 L24,17 Z" fill="url(#gaFill)" stroke="rgba(95,208,255,.3)" stroke-width="0.8" />
+
+              <!-- Elevation overlays -->
+              <ellipse cx="50" cy="35" rx="22" ry="15" fill="url(#elev1)" />
+              <ellipse cx="35" cy="55" rx="16" ry="12" fill="url(#elev2)" />
+
+              <!-- Topographic contour lines (north Georgia highlands) -->
+              <path class="topo-line-major" d="M30,12 C45,14 60,12 72,10" />
+              <path class="topo-line" d="M28,18 C42,20 56,18 70,16" />
+              <path class="topo-line" d="M26,24 C40,26 54,24 68,22" />
+              <path class="topo-line-major" d="M24,30 C38,32 52,30 66,28" />
+              <path class="topo-line" d="M22,36 C36,38 50,36 64,34" />
+              <path class="topo-line" d="M20,42 C34,44 48,42 62,40" />
+              <path class="topo-line-major" d="M18,48 C32,50 46,48 60,46" />
+              <path class="topo-line" d="M16,54 C30,56 44,54 58,52" />
+              <path class="topo-line" d="M14,60 C28,62 42,60 56,58" />
+              <path class="topo-line-major" d="M12,66 C26,68 40,66 54,64" />
+              <path class="topo-line" d="M12,72 C26,74 40,72 54,70" />
+              <path class="topo-line" d="M14,78 C28,80 42,78 56,76" />
+              <path class="topo-line-major" d="M16,84 C30,86 44,84 58,82" />
+              <path class="topo-line" d="M20,90 C34,91 48,90 62,88" />
+
+              <!-- Vertical contours ( Appalachian ridges running NE-SW) -->
+              <path class="topo-line" d="M40,10 C38,25 36,40 34,55 C33,70 32,82 31,92" />
+              <path class="topo-line" d="M50,10 C48,25 46,40 44,55 C43,70 42,82 41,92" />
+              <path class="topo-line" d="M60,10 C58,25 56,40 54,55 C53,70 52,82 51,92" />
+              <path class="topo-line" d="M70,10 C68,25 66,40 64,55 C63,70 62,82 61,92" />
+
+              <!-- Rivers (Chattahoochee + Etowah watersheds) -->
+              <path class="topo-river" d="M28,14 C35,22 42,30 50,38 C58,46 66,56 74,68 C78,76 80,84 76,92" />
+              <path class="topo-river-2" d="M40,16 C44,24 48,32 52,40 C56,50 60,60 64,70" />
+              <path class="topo-river-2" d="M22,40 C28,46 34,52 40,58 C46,65 52,72 58,80" />
+              <path class="topo-river" d="M55,18 C53,28 55,38 60,48 C65,58 70,68 72,78" />
+
+              <!-- City labels -->
+              <text x="52" y="50" fill="rgba(155,180,203,.4)" font-size="2.5" text-anchor="middle" font-family="sans-serif">ATLANTA</text>
+              <text x="73" y="30" fill="rgba(155,180,203,.3)" font-size="2" text-anchor="middle" font-family="sans-serif">BUFORD</text>
+              <text x="60" y="25" fill="rgba(155,180,203,.3)" font-size="2" text-anchor="middle" font-family="sans-serif">DAWSONVILLE</text>
+              <text x="28" y="73" fill="rgba(155,180,203,.3)" font-size="2" text-anchor="middle" font-family="sans-serif">DALLAS</text>
             </svg>
             {% for station in stations %}
               <div class="marker {{ station.status }}" style="left: {{ station.coords[0] }}%; top: {{ station.coords[1] }}%; background: {% if station.status == 'danger' %}var(--red){% elif station.status == 'warning' %}var(--yellow){% elif station.status == 'normal' %}var(--green){% else %}#64748b{% endif %};"></div>
