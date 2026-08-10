@@ -1,20 +1,22 @@
 """
-Unified entry point for Water Research Copilot apps.
+Unified entry point for Water Research Copilot.
 
-Uses APP_MODE env var to determine which server to run:
-  - APP_MODE=dashboard → Flask web UI
-  - APP_MODE=mcp (or unset) → FastMCP server
+Uses DATABRICKS_APP_NAME (auto-set by Databricks) to determine which server to run:
+  - App name contains 'dashboard' → Flask web UI
+  - Otherwise → FastMCP server
 """
 
 import os
 
-APP_MODE = os.getenv("APP_MODE", "mcp")
+APP_NAME = os.getenv("DATABRICKS_APP_NAME", "")
+IS_DASHBOARD = "dashboard" in APP_NAME.lower()
 
-if APP_MODE == "dashboard":
+if IS_DASHBOARD:
     import sys
     from pathlib import Path
-    # Add dashboard dir to path so we can import app.py (Flask)
-    dashboard_dir = Path(__file__).resolve().parent / "dashboard"
+
+    here = Path(__file__).resolve().parent
+    dashboard_dir = here / "dashboard"
     sys.path.insert(0, str(dashboard_dir))
     os.chdir(dashboard_dir)
 
